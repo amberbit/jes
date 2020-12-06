@@ -3,16 +3,6 @@ defmodule Jes do
   Documentation for `Jes`.
   """
 
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> Jes.hello()
-      :world
-
-  """
-  def hello do
-    :world
+  def decode(stream) do
   end
 end
