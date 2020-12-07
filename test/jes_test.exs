@@ -24,6 +24,16 @@ defmodule JesTest do
            ]
   end
 
+  test "decodes a short string" do
+    stream = ["\"He", "llo!\""] |> Stream.map(& &1)
+    events = stream |> Jes.decode() |> Enum.to_list()
+
+    assert events == [
+             %{key: "$", type: :string},
+             %{key: "$", value: "Hello!"}
+           ]
+  end
+
   test "decodes true and false" do
     stream = ["tr", "ue"] |> Stream.map(& &1)
     events = stream |> Jes.decode() |> Enum.to_list()
@@ -204,7 +214,7 @@ defmodule JesTest do
 
     assert events == [
              %{key: "$", type: :object},
-             %{error: "unexpected token", position: 2}
+             %{error: "unexpected token", string: "wat}"}
            ]
   end
 end
