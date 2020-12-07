@@ -17,14 +17,18 @@ defmodule Jes.Resource do
     {:noreply, %{state | buffer: buffer, fun: fun}}
   end
 
+  # We have reached end of input stream, meaning we're done with processing file
+  # TODO: handle error when the JSON isn't correctly closed at this point.
   def handle_call({:decode_some_more, _max_string_chunk_size}, _from, %{buffer: ""} = state) do
     {:reply, [], %{state | mode: :done}}
   end
 
+  # We have encountered error / finished before but we've been asked for more streaming.
   def handle_call({:decode_some_more, _max_string_chunk_size}, _from, %{mode: :done} = state) do
     {:reply, [], state}
   end
 
+  # The stream should now contain a value: object, array, string, number.
   def handle_call(
         {:decode_some_more, max_string_chunk_size},
         from,
@@ -38,6 +42,9 @@ defmodule Jes.Resource do
     {:noreply, %{state | path: new_path, mode: new_mode, fun: fun, buffer: buffer}}
   end
 
+  # The stream is within a String. Part of the stream was already sent as events,
+  # but we haven't reached end of String just yet. Will emit N events, each having
+  # parts of string of max_string_chunk_size tops.
   def handle_call(
         {:decode_some_more, max_string_chunk_size},
         from,
@@ -51,6 +58,8 @@ defmodule Jes.Resource do
     {:noreply, %{state | path: new_path, mode: new_mode, fun: fun, buffer: buffer}}
   end
 
+  # We are within Object, and we expect the next thing in stream to be key,
+  # or end of Object, i.e. "somekey": or }
   def handle_call(
         {:decode_some_more, max_string_chunk_size},
         from,

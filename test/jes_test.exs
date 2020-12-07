@@ -208,6 +208,9 @@ defmodule JesTest do
            ]
   end
 
+  # TODO: implement arrays parsing
+  test "decodes arrays"
+
   test "stops decoding when it meets a token that shouldn't be there" do
     stream = ["{wat", "}"] |> Stream.map(& &1)
     events = stream |> Jes.decode() |> Enum.to_list()
