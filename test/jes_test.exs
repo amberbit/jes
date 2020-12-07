@@ -122,7 +122,7 @@ defmodule JesTest do
 
     assert events == [
              %{key: "$", type: :float},
-             %{key: "$", value: 10}
+             %{key: "$", value: 10.0}
            ]
 
     stream = ["-1", "e1"] |> Stream.map(& &1)
@@ -130,7 +130,7 @@ defmodule JesTest do
 
     assert events == [
              %{key: "$", type: :float},
-             %{key: "$", value: -10}
+             %{key: "$", value: -10.0}
            ]
 
     stream = ["1", "e-2"] |> Stream.map(& &1)
@@ -174,7 +174,7 @@ defmodule JesTest do
   end
 
   test "decodes key/value objects" do
-    stream = ["{\"count", "\": 1\n,", "\t\"data\":", "\"Hello!\"\n}"] |> Stream.map(& &1)
+    stream = ["{\"count", "\": 1\n,", "\t\"data\":", "\"\"\n}"] |> Stream.map(& &1)
     events = stream |> Jes.decode() |> Enum.to_list()
 
     assert events == [
@@ -182,7 +182,7 @@ defmodule JesTest do
              %{key: "$.count", type: :integer},
              %{key: "$.count", value: 1},
              %{key: "$.data", type: :string},
-             %{key: "$.data", value: "Hello!"}
+             %{key: "$.data", value: ""}
            ]
   end
 
