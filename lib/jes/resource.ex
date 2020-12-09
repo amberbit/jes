@@ -1,44 +1,49 @@
 defmodule Jes.Resource do
   use GenServer
 
-  def init(stream) do
+  def init([stream, max_string_chunk_size: max_string_chunk_size]) do
     {:ok,
-     %{fun: create_suspended_stream_fun(stream), buffer: "", path: ["$"], mode: :expects_value},
-     {:continue, :fill_buffer}}
+     %{
+       fun: create_suspended_stream_fun(stream),
+       buffer: "",
+       path: ["$"],
+       mode: :expects_value,
+       max_string_chunk_size: max_string_chunk_size
+     }, {:continue, :fill_buffer}}
   end
 
-  def decode_some_more(pid, max_string_chunk_size) do
-    GenServer.call(pid, {:decode_some_more, max_string_chunk_size})
+  def decode_some_more(pid) do
+    GenServer.call(pid, :decode_some_more)
   end
 
   def handle_continue(:fill_buffer, state) do
-    {fun, buffer} = fill_buffer(state.fun, state.buffer)
+    {fun, buffer} = fill_buffer(state.fun, state.buffer, state.max_string_chunk_size)
 
     {:noreply, %{state | buffer: buffer, fun: fun}}
   end
 
   # We have reached end of input stream, meaning we're done with processing file
   # TODO: handle error when the JSON isn't correctly closed at this point.
-  def handle_call({:decode_some_more, _max_string_chunk_size}, _from, %{buffer: ""} = state) do
+  def handle_call(:decode_some_more, _from, %{buffer: ""} = state) do
     {:reply, [], %{state | mode: :done}}
   end
 
   # We have encountered error / finished before but we've been asked for more streaming.
-  def handle_call({:decode_some_more, _max_string_chunk_size}, _from, %{mode: :done} = state) do
+  def handle_call(:decode_some_more, _from, %{mode: :done} = state) do
     {:reply, [], state}
   end
 
   # The stream should now contain a value: object, array, string, number.
   def handle_call(
-        {:decode_some_more, max_string_chunk_size},
+        :decode_some_more,
         from,
         %{mode: :expects_value, path: path, buffer: buffer} = state
       ) do
-    {events, new_path, new_mode, new_buffer} = value(buffer, path, max_string_chunk_size)
+    {events, new_path, new_mode, new_buffer} = value(buffer, path, state.max_string_chunk_size)
 
     GenServer.reply(from, events)
 
-    {fun, buffer} = fill_buffer(state.fun, new_buffer)
+    {fun, buffer} = fill_buffer(state.fun, new_buffer, state.max_string_chunk_size)
     {:noreply, %{state | path: new_path, mode: new_mode, fun: fun, buffer: buffer}}
   end
 
@@ -46,36 +51,37 @@ defmodule Jes.Resource do
   # but we haven't reached end of String just yet. Will emit N events, each having
   # parts of string of max_string_chunk_size tops.
   def handle_call(
-        {:decode_some_more, max_string_chunk_size},
+        :decode_some_more,
         from,
         %{mode: :in_string, path: path, buffer: buffer} = state
       ) do
-    {events, new_path, new_mode, new_buffer} = string(buffer, path, "", max_string_chunk_size)
+    {events, new_path, new_mode, new_buffer} =
+      string(buffer, path, {"", 0}, state.max_string_chunk_size)
 
     GenServer.reply(from, events)
 
-    {fun, buffer} = fill_buffer(state.fun, new_buffer)
+    {fun, buffer} = fill_buffer(state.fun, new_buffer, state.max_string_chunk_size)
     {:noreply, %{state | path: new_path, mode: new_mode, fun: fun, buffer: buffer}}
   end
 
   # We are within Object, and we expect the next thing in stream to be key,
   # or end of Object, i.e. "somekey": or }
   def handle_call(
-        {:decode_some_more, max_string_chunk_size},
+        :decode_some_more,
         from,
         %{mode: :expects_key, path: path, buffer: buffer} = state
       ) do
-    case key(buffer, path, max_string_chunk_size) do
+    case key(buffer, path, state.max_string_chunk_size) do
       {events, _, :done, _} ->
         {:reply, events, state}
 
       {[], new_path, :expects_value, new_buffer} ->
         {events, new_path, new_mode, new_buffer} =
-          value(new_buffer, new_path, max_string_chunk_size)
+          value(new_buffer, new_path, state.max_string_chunk_size)
 
         GenServer.reply(from, events)
 
-        {fun, buffer} = fill_buffer(state.fun, new_buffer)
+        {fun, buffer} = fill_buffer(state.fun, new_buffer, state.max_string_chunk_size)
         {:noreply, %{state | path: new_path, mode: new_mode, fun: fun, buffer: buffer}}
     end
   end
@@ -153,7 +159,7 @@ defmodule Jes.Resource do
         {[], Enum.drop(path, -1), :expects_value, rest}
 
       <<"\"", rest::bits>> ->
-        {events, new_path, mode, buffer} = string(rest, path, "", max_string_chunk_size)
+        {events, new_path, mode, buffer} = string(rest, path, {"", 0}, max_string_chunk_size)
         {[%{key: Enum.join(path, "."), type: :string}] ++ events, new_path, mode, buffer}
 
       <<"true", rest::bits>> ->
@@ -233,20 +239,20 @@ defmodule Jes.Resource do
     end
   end
 
-  defp string(buffer, path, string_so_far, max_string_chunk_size) do
-    if String.length(string_so_far) >= max_string_chunk_size do
+  defp string(buffer, path, {string_so_far, length_so_far}, max_string_chunk_size) do
+    if length_so_far >= max_string_chunk_size do
       {[%{key: Enum.join(path, "."), value: string_so_far}], path, :in_string, buffer}
     else
       case buffer do
         <<"\\\"", rest::bits>> ->
-          string(rest, path, string_so_far <> "\\\"", max_string_chunk_size)
+          string(rest, path, {string_so_far <> "\\\"", length_so_far + 2}, max_string_chunk_size)
 
         <<"\"", rest::bits>> ->
           {mode, new_path} = advance_in_path(path)
           {[%{key: Enum.join(path, "."), value: string_so_far}], new_path, mode, rest}
 
         <<c::binary-size(1), rest::bits>> ->
-          string(rest, path, string_so_far <> c, max_string_chunk_size)
+          string(rest, path, {string_so_far <> c, length_so_far + 1}, max_string_chunk_size)
       end
     end
   end
@@ -267,16 +273,15 @@ defmodule Jes.Resource do
     fun
   end
 
-  @min_buffer_bytes 1024
+  defp fill_buffer(nil, buffer, _), do: {nil, buffer}
 
-  defp fill_buffer(nil, buffer), do: {nil, buffer}
-
-  defp fill_buffer(fun, buffer) when byte_size(buffer) < @min_buffer_bytes do
+  defp fill_buffer(fun, buffer, max_string_chunk_size)
+       when byte_size(buffer) < max_string_chunk_size * 2 do
     {new_fun, extra_buffer} = fetch_some_bytes(fun)
-    fill_buffer(new_fun, buffer <> extra_buffer)
+    fill_buffer(new_fun, buffer <> extra_buffer, max_string_chunk_size)
   end
 
-  defp fill_buffer(fun, buffer), do: {fun, buffer}
+  defp fill_buffer(fun, buffer, _), do: {fun, buffer}
 
   defp fetch_some_bytes(fun) do
     fun.({:cont, nil})

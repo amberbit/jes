@@ -10,7 +10,9 @@ defmodule Jes do
 
     Stream.resource(
       fn ->
-        {:ok, pid} = GenServer.start_link(Resource, stream)
+        {:ok, pid} =
+          GenServer.start_link(Resource, [stream, max_string_chunk_size: max_string_chunk_size])
+
         {pid, false}
       end,
       fn
@@ -18,14 +20,14 @@ defmodule Jes do
           {:halt, {pid, true}}
 
         {pid, false} ->
-          events = Resource.decode_some_more(pid, max_string_chunk_size)
+          events = Resource.decode_some_more(pid)
 
           case events do
             [] ->
               {:halt, {pid, true}}
 
             _ ->
-              if Enum.any?(events, &(&1[:error] != nil)) do
+              if Enum.all?(events, &(&1[:error] != nil)) do
                 {events, {pid, true}}
               else
                 {events, {pid, false}}
