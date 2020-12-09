@@ -5,7 +5,7 @@ defmodule Jes.MixProject do
     [
       app: :jes,
       description: "Jes stands for JSON Events Stream. It's a JSON parser which outputs Stream of events.",
-      version: "0.1.0",
+      version: "0.1.2",
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps()
