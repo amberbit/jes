@@ -19,8 +19,8 @@ defmodule JesTest do
     events = stream |> Jes.decode() |> Enum.to_list()
 
     assert events == [
-             %{key: "$", type: :string},
-             %{key: "$", value: ""}
+             %{key: "$", type: :string, action: :start},
+             %{key: "$", type: :string, action: :stop}
            ]
   end
 
@@ -29,8 +29,9 @@ defmodule JesTest do
     events = stream |> Jes.decode() |> Enum.to_list()
 
     assert events == [
-             %{key: "$", type: :string},
-             %{key: "$", value: "Hello!"}
+             %{key: "$", type: :string, action: :start},
+             %{key: "$", value: "Hello!"},
+             %{key: "$", type: :string, action: :stop}
            ]
   end
 
@@ -165,22 +166,39 @@ defmodule JesTest do
     events = stream |> Jes.decode() |> Enum.to_list()
 
     assert events == [
-             %{key: "$", type: :string},
-             %{key: "$", value: "Hello, world!"}
+             %{key: "$", type: :string, action: :start},
+             %{key: "$", value: "Hello, world!"},
+             %{key: "$", type: :string, action: :stop}
            ]
 
     events = stream |> Jes.decode(max_string_chunk_size: 2) |> Enum.to_list()
 
     assert events == [
-             %{key: "$", type: :string},
+             %{key: "$", type: :string, action: :start},
              %{key: "$", value: "He"},
              %{key: "$", value: "ll"},
              %{key: "$", value: "o,"},
              %{key: "$", value: " w"},
              %{key: "$", value: "or"},
              %{key: "$", value: "ld"},
-             %{key: "$", value: "!"}
+             %{key: "$", value: "!"},
+             %{action: :stop, key: "$", type: :string}
            ]
+  end
+
+  test "decodes strings values to given max_string_chunk_size even breking UTF-8" do
+    stream = ["\"kęs\""] |> Stream.map(& &1)
+
+    events = stream |> Jes.decode(max_string_chunk_size: 2) |> Enum.to_list()
+
+    assert events == [
+             %{action: :start, key: "$", type: :string},
+             %{key: "$", value: <<107, 196>>},
+             %{key: "$", value: <<153, 115>>},
+             %{action: :stop, key: "$", type: :string}
+           ]
+
+    assert <<107, 196>> <> <<153, 115>> == "kęs"
   end
 
   test "decodes key/value objects" do
@@ -191,8 +209,8 @@ defmodule JesTest do
              %{key: "$", type: :object},
              %{key: "$.count", type: :integer},
              %{key: "$.count", value: 1},
-             %{key: "$.data", type: :string},
-             %{key: "$.data", value: ""}
+             %{key: "$.data", type: :string, action: :start},
+             %{key: "$.data", type: :string, action: :stop}
            ]
   end
 

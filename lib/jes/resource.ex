@@ -160,7 +160,9 @@ defmodule Jes.Resource do
 
       <<"\"", rest::bits>> ->
         {events, new_path, mode, buffer} = string(rest, path, {"", 0}, max_string_chunk_size)
-        {[%{key: Enum.join(path, "."), type: :string}] ++ events, new_path, mode, buffer}
+
+        {[%{key: Enum.join(path, "."), type: :string, action: :start}] ++ events, new_path, mode,
+         buffer}
 
       <<"true", rest::bits>> ->
         events = [
@@ -249,12 +251,22 @@ defmodule Jes.Resource do
 
         <<"\"", rest::bits>> ->
           {mode, new_path} = advance_in_path(path)
-          {[%{key: Enum.join(path, "."), value: string_so_far}], new_path, mode, rest}
+
+          {signal_end_of_string(%{key: Enum.join(path, "."), value: string_so_far}), new_path,
+           mode, rest}
 
         <<c::binary-size(1), rest::bits>> ->
           string(rest, path, {string_so_far <> c, length_so_far + 1}, max_string_chunk_size)
       end
     end
+  end
+
+  defp signal_end_of_string(%{value: "", key: key}) do
+    [%{key: key, type: :string, action: :stop}]
+  end
+
+  defp signal_end_of_string(%{key: key} = event) do
+    [event, %{key: key, type: :string, action: :stop}]
   end
 
   defp advance_in_path(path) do
