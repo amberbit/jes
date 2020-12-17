@@ -153,10 +153,14 @@ defmodule Jes.Resource do
         {[], path, :done, ""}
 
       <<"[", rest::bits>> ->
-        {[%{key: Enum.join(path, "."), type: :array}], path ++ ["0"], :expects_value, rest}
+        {[%{key: Enum.join(path, "."), type: :array, action: :start}], path ++ ["0"],
+         :expects_value, rest}
 
       <<"]", rest::bits>> when last_path_item >= "0" and last_path_item <= "9" ->
-        {[], Enum.drop(path, -1), :expects_value, rest}
+        new_path = Enum.drop(path, -1)
+
+        {[%{key: Enum.join(new_path, "."), type: :array, action: :stop}], new_path,
+         :expects_value, rest}
 
       <<"\"", rest::bits>> ->
         {events, new_path, mode, buffer} = string(rest, path, {"", 0}, max_string_chunk_size)
@@ -187,6 +191,13 @@ defmodule Jes.Resource do
 
       <<c::binary-size(1), rest::bits>> when c >= "0" and c <= "9" ->
         number(rest, path, c)
+
+      <<",", rest::bits>> ->
+        if path |> List.last() |> String.match?(~r/^[0-9]+$/) do
+          value(rest, path, max_string_chunk_size)
+        else
+          {[%{error: "unexpected token", string: buffer}], path, :done, ""}
+        end
 
       _string ->
         {[%{error: "unexpected token", string: buffer}], path, :done, ""}
@@ -272,7 +283,7 @@ defmodule Jes.Resource do
   defp advance_in_path(path) do
     last = List.last(path)
 
-    if String.match?(last, ~r/^[:digit]+$/) do
+    if String.match?(last, ~r/^[0-9]+$/) do
       {:expects_value, (path |> Enum.drop(-1)) ++ ["#{String.to_integer(last) + 1}"]}
     else
       {:expects_key, path |> Enum.drop(-1)}

@@ -11,7 +11,11 @@ defmodule JesTest do
   test "decodes [] to empty array" do
     stream = ["[", "]"] |> Stream.map(& &1)
     events = stream |> Jes.decode() |> Enum.to_list()
-    assert events == [%{key: "$", type: :array}]
+
+    assert events == [
+             %{key: "$", type: :array, action: :start},
+             %{key: "$", type: :array, action: :stop}
+           ]
   end
 
   test "decodes \"\" to empty string" do
@@ -226,8 +230,25 @@ defmodule JesTest do
            ]
   end
 
-  # TODO: implement arrays parsing
-  test "decodes arrays"
+  test "decodes arrays" do
+    stream = ["[2,3,1,\"hey\"]"] |> Stream.map(& &1)
+
+    events = stream |> Jes.decode() |> Enum.to_list()
+
+    assert events == [
+             %{key: "$", type: :array, action: :start},
+             %{key: "$.0", type: :integer},
+             %{key: "$.0", value: 2},
+             %{key: "$.1", type: :integer},
+             %{key: "$.1", value: 3},
+             %{key: "$.2", type: :integer},
+             %{key: "$.2", value: 1},
+             %{key: "$.3", type: :string, action: :start},
+             %{key: "$.3", value: "hey"},
+             %{key: "$.3", type: :string, action: :stop},
+             %{key: "$", type: :array, action: :stop}
+           ]
+  end
 
   test "stops decoding when it meets a token that shouldn't be there" do
     stream = ["{wat", "}"] |> Stream.map(& &1)
